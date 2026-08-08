@@ -36,6 +36,8 @@ from core import moo
 from core import objectives as obj
 from core import verify
 
+MODEL_SIZES = ["xxsmall", "xsmall", "small", "medium", "large", "xlarge", "xxlarge", "xxxlarge"]
+
 OBJECTIVE_SHORTHAND = {
     "cd": "minimize_cd",
     "drag": "minimize_cd",
@@ -108,7 +110,24 @@ def build_parser() -> argparse.ArgumentParser:
 
     p.add_argument("--population", type=int, default=80)
     p.add_argument("--generations", type=int, default=120)
-    p.add_argument("--model-size", choices=["small", "medium", "large", "xlarge"], default="medium")
+    p.add_argument(
+        "--model-size", choices=MODEL_SIZES, default="medium",
+        help="Flat NeuralFoil model size for every generation. Ignored if --early-model-size/--late-model-size are given.",
+    )
+    p.add_argument(
+        "--early-model-size", choices=MODEL_SIZES, default=None,
+        help="Enable multi-fidelity scheduling: fast/small model size for the early (exploration) generations. "
+        "Must be given together with --late-model-size.",
+    )
+    p.add_argument(
+        "--late-model-size", choices=MODEL_SIZES, default=None,
+        help="Multi-fidelity: accurate/large model size for the late (refinement) generations. "
+        "Must be given together with --early-model-size.",
+    )
+    p.add_argument(
+        "--late-phase-fraction", type=float, default=0.20,
+        help="Multi-fidelity: fraction of total generations spent in the late (accurate) phase.",
+    )
     p.add_argument("--seed", type=int, default=0)
 
     p.add_argument("--max-weight-step", type=float, default=0.30)
@@ -162,6 +181,18 @@ def main() -> None:
         print(f"error: {e}", file=sys.stderr)
         sys.exit(2)
 
+    if (args.early_model_size is None) != (args.late_model_size is None):
+        print("error: --early-model-size and --late-model-size must be given together.", file=sys.stderr)
+        sys.exit(2)
+
+    model_size_schedule = None
+    if args.early_model_size is not None:
+        model_size_schedule = moo.ModelSizeSchedule(
+            early_model_size=args.early_model_size,
+            late_model_size=args.late_model_size,
+            late_phase_fraction=args.late_phase_fraction,
+        )
+
     baseline = geo.to_kulfan_baseline(airfoil)
     geometry_constraints = moo.GeometryConstraints(
         thickness_retention=args.thickness_retention,
@@ -177,6 +208,7 @@ def main() -> None:
         max_weight_step=args.max_weight_step,
         geometry=geometry_constraints,
         model_size=args.model_size,
+        model_size_schedule=model_size_schedule,
         population_size=args.population,
         n_generations=args.generations,
         seed=args.seed,
@@ -186,7 +218,14 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Optimizing '{airfoil.name}' with {len(design_points)} objectives: {[dp.label for dp in design_points]}")
-    print(f"Population {config.population_size} x {config.n_generations} generations, model_size={config.model_size}")
+    if model_size_schedule is not None:
+        print(
+            f"Population {config.population_size} x {config.n_generations} generations, "
+            f"multi-fidelity {model_size_schedule.early_model_size} -> {model_size_schedule.late_model_size} "
+            f"(last {model_size_schedule.late_phase_fraction:.0%} of generations)"
+        )
+    else:
+        print(f"Population {config.population_size} x {config.n_generations} generations, model_size={config.model_size}")
     t0 = time.time()
     result = moo.run_optimization(config, verbose=True)
     print(f"Done in {time.time() - t0:.1f}s — {result.X_pareto.shape[0]} non-dominated designs, {result.n_evaluations} evaluations.")

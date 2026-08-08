@@ -133,11 +133,30 @@ with st.sidebar:
         pop_size, n_gen = preset_map[preset]
         st.caption(f"Population {pop_size} · Generations {n_gen} · ~{pop_size * n_gen} evaluations")
 
-    model_size = st.selectbox(
-        "NeuralFoil model size", ["small", "medium", "large", "xlarge"], index=1,
-        help="Bigger = more accurate, slower. Medium is a good default for optimization; "
-        "verify promising results with the XFoil check below.",
+    model_size_options = ["xxsmall", "xsmall", "small", "medium", "large", "xlarge", "xxlarge", "xxxlarge"]
+    use_multi_fidelity = st.checkbox(
+        "Multi-fidelity scheduling (recommended)", value=True,
+        help="Run most generations on a small, fast NeuralFoil model for broad exploration, then switch to "
+        "a larger, more accurate model for the final generations to refine and rank the converging front. "
+        "Benchmarked against real XFoil on perturbed shapes: roughly break-even to ~5% faster overall than a "
+        "flat 'medium' run, with meaningfully better accuracy on the final result (~2% mean CD error at "
+        "'xlarge' vs ~5% at 'medium'). The speed gain is modest, not dramatic -- accuracy is the main benefit.",
     )
+    if use_multi_fidelity:
+        c1, c2 = st.columns(2)
+        early_model_size = c1.selectbox("Early-phase (fast) size", model_size_options, index=model_size_options.index("small"))
+        late_model_size = c2.selectbox("Late-phase (accurate) size", model_size_options, index=model_size_options.index("xlarge"))
+        late_phase_fraction = st.slider(
+            "Late-phase fraction", 0.05, 0.50, 0.20, 0.05,
+            help="Fraction of total generations spent in the accurate late phase, refining the front found "
+            "during the fast early phase.",
+        )
+        model_size = late_model_size  # used for final display (polars, etc.) before a result exists
+    else:
+        model_size = st.selectbox(
+            "NeuralFoil model size", model_size_options, index=model_size_options.index("medium"),
+            help="Bigger = more accurate, slower. Applied flat across every generation.",
+        )
 
 # ---------------------------------------------------------------------
 # Main: design points (multi-objective, mandatory >= 2)
@@ -218,17 +237,32 @@ if run_clicked:
             min_ixx_retention=min_ixx_retention,
             min_j_retention=min_j_retention,
         )
+        model_size_schedule = (
+            moo.ModelSizeSchedule(
+                early_model_size=early_model_size, late_model_size=late_model_size, late_phase_fraction=late_phase_fraction
+            )
+            if use_multi_fidelity
+            else None
+        )
         config = moo.OptimizationConfig(
             baseline=baseline,
             design_points=design_points,
             max_weight_step=max_weight_step,
             geometry=geometry_constraints,
             model_size=model_size,
+            model_size_schedule=model_size_schedule,
             population_size=int(pop_size),
             n_generations=int(n_gen),
             seed=0,
         )
-        with st.spinner(f"Running NSGA-II — {pop_size} population × {n_gen} generations, {len(design_points)} objectives..."):
+        if use_multi_fidelity:
+            spinner_text = (
+                f"Running NSGA-II — {pop_size} population × {n_gen} generations, {len(design_points)} objectives "
+                f"({early_model_size} → {late_model_size} multi-fidelity)..."
+            )
+        else:
+            spinner_text = f"Running NSGA-II — {pop_size} population × {n_gen} generations, {len(design_points)} objectives..."
+        with st.spinner(spinner_text):
             try:
                 result = moo.run_optimization(config)
                 st.session_state.result = result
@@ -335,8 +369,8 @@ if result is not None:
 
     st.subheader("Drag polar (NeuralFoil sweep, baseline vs. selected)")
     re_for_sweep = result.config.design_points[0].re
-    sweep_base = obj.sweep_polar_neuralfoil(geo.baseline_design_vector(result.config.baseline), re=re_for_sweep, model_size=model_size)
-    sweep_sel = obj.sweep_polar_neuralfoil(result.X_pareto[sel], re=re_for_sweep, model_size=model_size)
+    sweep_base = obj.sweep_polar_neuralfoil(geo.baseline_design_vector(result.config.baseline), re=re_for_sweep, model_size=result.config.final_model_size)
+    sweep_sel = obj.sweep_polar_neuralfoil(result.X_pareto[sel], re=re_for_sweep, model_size=result.config.final_model_size)
     fig_polar = go.Figure()
     fig_polar.add_trace(go.Scatter(x=sweep_base["CD"], y=sweep_base["CL"], mode="lines", name="Baseline", line=dict(color="#B0B0B0", dash="dash")))
     fig_polar.add_trace(go.Scatter(x=sweep_sel["CD"], y=sweep_sel["CL"], mode="lines", name=f"Design #{sel}", line=dict(color="#54A24B")))

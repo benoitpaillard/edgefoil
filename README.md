@@ -16,6 +16,10 @@ web UI anyone can use — no Python required to run an optimization.
   (e.g. minimize drag at a low-lift cruise condition *and* at a high-lift climb
   condition); the optimizer returns the actual Pareto front of that trade-off using
   NSGA-II, rather than a single blended answer.
+- **Multi-fidelity scheduling across NeuralFoil's own model sizes**, on by default.
+  Most generations run on a small, fast model for broad exploration; the final
+  generations switch to a larger, more accurate model to refine and rank the
+  converging front. See [Multi-fidelity scheduling](#multi-fidelity-scheduling) below.
 
 ## Quickstart (web app)
 
@@ -107,6 +111,41 @@ returns the *origin*-referenced `Ixx + Iyy` instead of the *centroid*-referenced
 This project's `core/geometry.py:batched_polygon_inertia()` implements the correction
 correctly from scratch (needed anyway for fast whole-population batching) and is
 verified against AeroSandbox's `Ixx()`/`Iyy()`/`Ixy()` (which do not have this bug).
+
+## Multi-fidelity scheduling
+
+NeuralFoil offers 8 model sizes (`xxsmall` through `xxxlarge`) as a speed/accuracy
+trade-off. Benchmarked here against real XFoil on perturbed NACA 2412 shapes:
+
+| Model size | Time / generation (pop=150) | Mean CD error vs. XFoil |
+|---|---|---|
+| `xsmall` | 229 ms | 7.0% |
+| `small` | 301 ms | 4.3% |
+| `medium` | 359 ms | 4.6% |
+| `large` | 464 ms | 3.8% |
+| `xlarge` | 518 ms | 2.3% |
+| `xxxlarge` | 1774 ms | 1.1% |
+
+Unlike a NeuralFoil/XFoil multi-fidelity split, every size here is still a batched
+neural-net call — no subprocess overhead — so a two-phase schedule is cheap to do:
+most generations run on a small/fast model for broad exploration, then the last
+`late_phase_fraction` of generations switch to a large/accurate model (seeded from
+phase one's final population, via `PopulationSeededSampling`) to refine and rank the
+converging front.
+
+**Be honest about the payoff:** the accuracy improvement on the final front is real
+and the main benefit. The speed benefit is real but modest (~5% faster than a flat
+`medium` run at typical settings, not dramatic) — pymoo's own per-generation overhead
+and the fixed cost of running two separate optimization phases eat into the raw
+per-evaluation speed difference. It's a reasonable default specifically because it's
+*at worst* roughly break-even on time while being more accurate, not because it's a
+big speedup.
+
+Controls: the "Multi-fidelity scheduling" checkbox in the web UI (on by default,
+with early/late model size and late-phase-fraction fields), or `--early-model-size`
+/ `--late-model-size` / `--late-phase-fraction` on the CLI (both `--early-model-size`
+and `--late-model-size` must be given together; omitting both falls back to the flat
+`--model-size`).
 
 ## How it works
 
