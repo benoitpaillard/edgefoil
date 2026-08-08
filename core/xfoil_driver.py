@@ -8,6 +8,15 @@ sequence below (LOAD -> PANE -> OPER -> VISC -> PACC -> ASEQ/ALFA/CL -> QUIT)
 was verified to work reliably, so this module talks to the xfoil binary
 directly instead of going through that wrapper.
 
+Graphics are intentionally left ENABLED (the default). This build of xfoil
+needs *some* display to talk to during PANE -- disabling graphics via the
+PLOP/G toggle (what aerosandbox.XFoil does) avoids needing one but instead
+hits a reproducible SIGFPE in this same build's graphics-disabled code path
+(the exact crash noted above). So on a machine with zero display available
+at all (e.g. Streamlit Community Cloud's headless container), this module
+runs xfoil under `xvfb-run` (a virtual framebuffer) instead of disabling
+graphics, when `xvfb-run` is available -- see `_xfoil_invocation()`.
+
 Polars are captured via XFoil's PACC file-accumulation feature and parsed
 from the resulting fixed-format text file, which is far more robust than
 scraping the interactive stdout log.
@@ -15,6 +24,7 @@ scraping the interactive stdout log.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import tempfile
@@ -47,6 +57,21 @@ def _find_xfoil(xfoil_command: str = "xfoil") -> str:
             "https://web.mit.edu/drela/Public/web/xfoil/) and make sure it's on PATH."
         )
     return path
+
+
+def _xfoil_invocation(xfoil_path: str) -> list[str]:
+    """Returns the subprocess argv to launch xfoil with. When there's no display at
+    all ($DISPLAY unset -- e.g. a fully headless container like Streamlit Community
+    Cloud), wraps it in `xvfb-run` to give it a virtual one, since this xfoil build
+    needs *some* display during PANE (see the module docstring for why disabling
+    graphics instead is not a safe alternative). Falls back to a direct call if
+    xvfb-run isn't installed; the resulting XFoilError message will make that clear."""
+    if os.environ.get("DISPLAY"):
+        return [xfoil_path]
+    xvfb_run_path = shutil.which("xvfb-run")
+    if xvfb_run_path is not None:
+        return [xvfb_run_path, "-a", xfoil_path]
+    return [xfoil_path]
 
 
 def _write_dat(coordinates: np.ndarray, path: Path, name: str = "airfoil") -> None:
@@ -160,7 +185,7 @@ def run_polar(
 
         try:
             result = subprocess.run(
-                [xfoil_path],
+                _xfoil_invocation(xfoil_path),
                 cwd=tmp,
                 input=input_text,
                 capture_output=True,
