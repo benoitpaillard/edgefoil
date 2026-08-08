@@ -1,0 +1,9 @@
+aerosandbox>=4.2
+neuralfoil>=0.3
+pymoo>=0.6
+numpy
+scipy
+pandas
+streamlit>=1.40
+plotly>=5.0
+matplotlib
