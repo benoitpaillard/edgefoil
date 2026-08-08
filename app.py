@@ -1,5 +1,5 @@
 """
-Airfoil Multi-Objective Optimizer — Streamlit app.
+EdgeFoil — multi-objective airfoil optimizer, Streamlit app.
 
 Pick a starting airfoil, define 2+ operating-point objectives (a genuine
 multi-objective trade-off, e.g. cruise drag vs. climb drag), run NSGA-II
@@ -28,7 +28,7 @@ from core import moo
 from core import objectives as obj
 from core import verify
 
-st.set_page_config(page_title="Airfoil Optimizer", layout="wide", page_icon="✈️")
+st.set_page_config(page_title="EdgeFoil", layout="wide", page_icon="✈️")
 
 OBJECTIVE_LABEL_TO_KIND = {
     "Minimize drag (CD)": "minimize_cd",
@@ -79,8 +79,8 @@ def airfoil_xy(x: np.ndarray, name: str) -> np.ndarray:
     return np.array(kulfan.to_airfoil(n_coordinates_per_side=150).coordinates)
 
 
-st.title("✈️ Airfoil Multi-Objective Optimizer")
-st.caption("NeuralFoil-driven NSGA-II shape optimization, cross-checked against XFoil.")
+st.title("✈️ EdgeFoil")
+st.caption("Multi-objective airfoil optimization that gives you the edge — NeuralFoil-driven NSGA-II shape optimization, cross-checked against XFoil.")
 
 # ---------------------------------------------------------------------
 # Sidebar: starting airfoil

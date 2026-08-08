@@ -1,6 +1,6 @@
-# Airfoil Multi-Objective Optimizer
+# EdgeFoil
 
-A shape optimizer for 2D airfoils that combines **NeuralFoil** (a fast neural-network
+A multi-objective shape optimizer for 2D airfoils that combines **NeuralFoil** (a fast neural-network
 aerodynamics surrogate) with **XFoil** (the classic panel-method solver) behind a
 web UI anyone can use — no Python required to run an optimization.
 
