@@ -99,11 +99,23 @@ def run_polar(
     """Runs xfoil on a coordinate airfoil and returns converged polar points.
 
     Exactly one of alpha_sweep=(a0, a1, da), alpha_list, or cl_list must be given.
+    Raises XFoilError (with a diagnostic message, including a tail of xfoil's own
+    output) if the binary can't be found, the run times out, xfoil exits nonzero,
+    or it completes but produces no converged polar points -- never silently
+    returns an empty/ambiguous result.
     """
     xfoil_path = _find_xfoil(xfoil_command)
     modes_given = sum(x is not None for x in (alpha_sweep, alpha_list, cl_list))
     if modes_given != 1:
         raise ValueError("Provide exactly one of alpha_sweep, alpha_list, or cl_list.")
+
+    case_desc = f"Re={re:.4g}, mach={mach:.3g}" + (
+        f", CL target(s)={cl_list}"
+        if cl_list is not None
+        else f", alpha(s)={alpha_list}"
+        if alpha_list is not None
+        else f", alpha sweep={alpha_sweep}"
+    )
 
     with tempfile.TemporaryDirectory(prefix="xfoil_") as tmpdir:
         tmp = Path(tmpdir)
@@ -147,7 +159,7 @@ def run_polar(
         input_text = "\n".join(cmds) + "\n"
 
         try:
-            subprocess.run(
+            result = subprocess.run(
                 [xfoil_path],
                 cwd=tmp,
                 input=input_text,
@@ -156,9 +168,26 @@ def run_polar(
                 timeout=timeout,
             )
         except subprocess.TimeoutExpired as e:
-            raise XFoilError(f"xfoil timed out after {timeout}s (it may have stalled on a non-converging case).") from e
+            raise XFoilError(
+                f"xfoil timed out after {timeout}s on case ({case_desc}) -- it may have stalled on a non-converging point."
+            ) from e
 
-        return _parse_polar_file(polar_path)
+        if result.returncode != 0:
+            tail = (result.stdout or "")[-600:]
+            raise XFoilError(
+                f"xfoil exited with code {result.returncode} on case ({case_desc}) -- it likely crashed rather "
+                f"than failing to converge. Last output:\n{tail}"
+            )
+
+        points = _parse_polar_file(polar_path)
+        if not points:
+            tail = (result.stdout or "")[-600:]
+            raise XFoilError(
+                f"xfoil ran (exit 0) but produced no converged polar points for case ({case_desc}). This usually "
+                f"means genuine non-convergence (near/past stall, or an unreachable operating point for this "
+                f"shape) rather than a setup problem. Last output:\n{tail}"
+            )
+        return points
 
 
 def polar_at_target_cl(
@@ -170,9 +199,10 @@ def polar_at_target_cl(
     xtr_upper: float = 1.0,
     xtr_lower: float = 1.0,
     **kwargs,
-) -> XFoilPolarPoint | None:
+) -> XFoilPolarPoint:
+    """Raises XFoilError on any failure -- see run_polar()."""
     points = run_polar(coordinates, re=re, mach=mach, n_crit=n_crit, xtr_upper=xtr_upper, xtr_lower=xtr_lower, cl_list=[cl_target], **kwargs)
-    return points[0] if points else None
+    return points[0]
 
 
 def polar_at_alpha(
@@ -184,6 +214,7 @@ def polar_at_alpha(
     xtr_upper: float = 1.0,
     xtr_lower: float = 1.0,
     **kwargs,
-) -> XFoilPolarPoint | None:
+) -> XFoilPolarPoint:
+    """Raises XFoilError on any failure -- see run_polar()."""
     points = run_polar(coordinates, re=re, mach=mach, n_crit=n_crit, xtr_upper=xtr_upper, xtr_lower=xtr_lower, alpha_list=[alpha_deg], **kwargs)
-    return points[0] if points else None
+    return points[0]

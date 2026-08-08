@@ -40,6 +40,7 @@ class VerificationRow:
     xfoil_CD: float | None = None
     xfoil_CM: float | None = None
     cd_relative_error: float | None = None  # (xfoil_CD - neuralfoil_CD) / xfoil_CD
+    error_message: str | None = None  # populated when xfoil_converged is False
 
 
 def select_representative_indices(F_pareto: np.ndarray, max_points: int) -> list[int]:
@@ -62,6 +63,7 @@ def _verify_one(
     n_panels: int,
     timeout: float,
 ) -> VerificationRow:
+    error_message = None
     try:
         if dp.cl_target is not None:
             point = xd.polar_at_target_cl(
@@ -75,8 +77,9 @@ def _verify_one(
                 n_crit=dp.n_crit, xtr_upper=dp.xtr_upper, xtr_lower=dp.xtr_lower,
                 n_panels=n_panels, timeout=timeout,
             )
-    except xd.XFoilError:
+    except xd.XFoilError as e:
         point = None
+        error_message = str(e)
 
     cd_rel_err = None
     if point is not None and point.CD:
@@ -95,6 +98,7 @@ def _verify_one(
         xfoil_CD=point.CD if point else None,
         xfoil_CM=point.CM if point else None,
         cd_relative_error=cd_rel_err,
+        error_message=error_message,
     )
 
 

@@ -53,14 +53,14 @@ def verification_csv(rows: list[VerificationRow]) -> str:
     writer.writerow(
         [
             "front_index", "design_point", "neuralfoil_alpha_deg", "neuralfoil_CL", "neuralfoil_CD", "neuralfoil_CM",
-            "xfoil_converged", "xfoil_alpha_deg", "xfoil_CL", "xfoil_CD", "xfoil_CM", "cd_relative_error",
+            "xfoil_converged", "xfoil_alpha_deg", "xfoil_CL", "xfoil_CD", "xfoil_CM", "cd_relative_error", "error_message",
         ]
     )
     for r in rows:
         writer.writerow(
             [
                 r.front_index, r.design_point_label, r.neuralfoil_alpha_deg, r.neuralfoil_CL, r.neuralfoil_CD, r.neuralfoil_CM,
-                r.xfoil_converged, r.xfoil_alpha_deg, r.xfoil_CL, r.xfoil_CD, r.xfoil_CM, r.cd_relative_error,
+                r.xfoil_converged, r.xfoil_alpha_deg, r.xfoil_CL, r.xfoil_CD, r.xfoil_CM, r.cd_relative_error, r.error_message,
             ]
         )
     return buf.getvalue()

@@ -393,6 +393,7 @@ if result is not None:
                         "XFoil CL": r.xfoil_CL,
                         "XFoil CD": r.xfoil_CD,
                         "CD rel. error": f"{r.cd_relative_error:+.1%}" if r.cd_relative_error is not None else "—",
+                        "Error": (r.error_message or "").splitlines()[0][:100] if r.error_message else "—",
                     }
                     for r in rows_v
                 ]
@@ -403,9 +404,20 @@ if result is not None:
         st.caption("Verified Pareto-front designs:")
         st.dataframe(_rows_to_df(st.session_state.verification), use_container_width=True, hide_index=True)
 
-        n_failed = sum(1 for r in st.session_state.verification if not r.xfoil_converged)
-        if n_failed:
-            st.warning(f"{n_failed} XFoil run(s) did not converge — treat those designs as unverified/suspect.")
+        all_rows = list(st.session_state.baseline_verification) + list(st.session_state.verification)
+        failed_rows = [r for r in all_rows if not r.xfoil_converged]
+        if failed_rows:
+            n_failed, n_total = len(failed_rows), len(all_rows)
+            if n_failed == n_total:
+                st.error(
+                    f"All {n_total} XFoil runs failed — this is a setup/environment problem, not real "
+                    f"aerodynamic non-convergence (real non-convergence is selective, not 100%). See the "
+                    f"error detail below."
+                )
+            else:
+                st.warning(f"{n_failed} of {n_total} XFoil run(s) did not converge — treat those designs as unverified/suspect.")
+            with st.expander(f"First failure detail ({failed_rows[0].design_point_label}, front_index={failed_rows[0].front_index})"):
+                st.code(failed_rows[0].error_message or "(no error message captured)")
 
         verify_csv = io_u.verification_csv(st.session_state.verification)
         st.download_button("⬇️ Download verification results (.csv)", verify_csv, file_name="xfoil_verification.csv", mime="text/csv")
