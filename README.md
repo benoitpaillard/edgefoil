@@ -16,10 +16,11 @@ web UI anyone can use — no Python required to run an optimization.
   (e.g. minimize drag at a low-lift cruise condition *and* at a high-lift climb
   condition); the optimizer returns the actual Pareto front of that trade-off using
   NSGA-II, rather than a single blended answer.
-- **Multi-fidelity scheduling across NeuralFoil's own model sizes**, on by default.
-  Most generations run on a small, fast model for broad exploration; the final
-  generations switch to a larger, more accurate model to refine and rank the
-  converging front. See [Multi-fidelity scheduling](#multi-fidelity-scheduling) below.
+- **NeuralFoil model size is configurable** (`xxsmall` through `xxxlarge`) as a
+  speed/accuracy trade-off; a rigorous multi-seed study found that just picking a
+  larger flat size beats the multi-fidelity scheduling scheme this project also
+  ships (available, but not recommended based on what was actually measured). See
+  [Multi-fidelity scheduling](#multi-fidelity-scheduling) below.
 
 ## Quickstart (web app)
 
@@ -112,10 +113,10 @@ This project's `core/geometry.py:batched_polygon_inertia()` implements the corre
 correctly from scratch (needed anyway for fast whole-population batching) and is
 verified against AeroSandbox's `Ixx()`/`Iyy()`/`Ixy()` (which do not have this bug).
 
-## Multi-fidelity scheduling
+## Multi-fidelity scheduling (available, not recommended)
 
 NeuralFoil offers 8 model sizes (`xxsmall` through `xxxlarge`) as a speed/accuracy
-trade-off. Benchmarked here against real XFoil on perturbed NACA 2412 shapes:
+trade-off. Benchmarked in isolation against real XFoil on perturbed NACA 2412 shapes:
 
 | Model size | Time / generation (pop=150) | Mean CD error vs. XFoil |
 |---|---|---|
@@ -127,25 +128,57 @@ trade-off. Benchmarked here against real XFoil on perturbed NACA 2412 shapes:
 | `xxxlarge` | 1774 ms | 1.1% |
 
 Unlike a NeuralFoil/XFoil multi-fidelity split, every size here is still a batched
-neural-net call — no subprocess overhead — so a two-phase schedule is cheap to do:
-most generations run on a small/fast model for broad exploration, then the last
-`late_phase_fraction` of generations switch to a large/accurate model (seeded from
-phase one's final population, via `PopulationSeededSampling`) to refine and rank the
-converging front.
+neural-net call — no subprocess overhead — so a two-phase schedule is cheap to
+implement: most generations run on a small/fast model for broad exploration, then the
+last `late_phase_fraction` of generations switch to a large/accurate model (seeded
+from phase one's final population via `PopulationSeededSampling`) to refine and rank
+the converging front. It's implemented (`ModelSizeSchedule` in `core/moo.py`) and
+available — the "Multi-fidelity scheduling" checkbox in the web UI, or
+`--early-model-size`/`--late-model-size`/`--late-phase-fraction` on the CLI (both
+`--early-model-size` and `--late-model-size` must be given together; omitting both
+falls back to the flat `--model-size`).
 
-**Be honest about the payoff:** the accuracy improvement on the final front is real
-and the main benefit. The speed benefit is real but modest (~5% faster than a flat
-`medium` run at typical settings, not dramatic) — pymoo's own per-generation overhead
-and the fixed cost of running two separate optimization phases eat into the raw
-per-evaluation speed difference. It's a reasonable default specifically because it's
-*at worst* roughly break-even on time while being more accurate, not because it's a
-big speedup.
+**It didn't hold up under a rigorous test.** The per-model-size table above made it
+look promising, but that's an isolated, single-call benchmark, not a test of the
+actual optimization outcome. A proper test settled it: 4 variants (flat `medium`,
+flat `large`, flat `xlarge`, and multi-fidelity `xsmall`→`xlarge`) × 5 seeds each,
+full NSGA-II runs at "Balanced" scale (pop=80, gen=120), with the resulting Pareto
+front verified against real XFoil (not NeuralFoil's own self-reported numbers, which
+would be circular) and compared via 2D hypervolume against a shared reference point:
 
-Controls: the "Multi-fidelity scheduling" checkbox in the web UI (on by default,
-with early/late model size and late-phase-fraction fields), or `--early-model-size`
-/ `--late-model-size` / `--late-phase-fraction` on the CLI (both `--early-model-size`
-and `--late-model-size` must be given together; omitting both falls back to the flat
-`--model-size`).
+| Variant | Time | Hypervolume | Best CD@cruise | Best CD@climb |
+|---|---|---|---|---|
+| flat `medium` | 32.5±3.9s | 1.58e-5 | 0.00449±0.00007 | 0.00638±0.00007 |
+| flat `large` | 42.8±3.5s | 1.68e-5 | 0.00436±0.00006 | 0.00621±0.00005 |
+| flat `xlarge` | 52.3±6.8s | 1.72e-5 | 0.00429±0.00005 | 0.00637±0.00012 |
+| multi-fidelity | 30.7±1.8s | 1.61e-5 | 0.00448±0.00003 | 0.00649±0.00011 |
+
+Welch's t-tests (n=5/variant) found:
+
+- **Flat `large` beats flat `medium` on every metric**, significantly (hypervolume
+  p=0.0005, cruise CD p=0.028, climb CD p=0.005), for +10s.
+- **Flat `xlarge` beats flat `medium`** on hypervolume and cruise CD (p<0.003 both);
+  climb CD is a wash — for +20s.
+- **Multi-fidelity vs. flat `medium`: no significant difference on anything** (all
+  p>0.12). It's a genuine statistical tie, not the improvement the isolated
+  per-model-size numbers suggested.
+- **Flat `large` beats multi-fidelity on every metric**, significantly (p≤0.015), for
+  +12s.
+- **Flat `large` vs. flat `xlarge`: `large` is significantly faster** (p=0.048) for
+  only a borderline/non-significant quality cost (p=0.06-0.11) — the apparent sweet
+  spot of the four.
+
+Best guess at the mechanism: multi-fidelity's early phase spends 80% of generations on
+a cheap model (~7% mean error) that can carry *systematic* bias about where the
+optimum is, not just noise — a short late phase can refine locally around wherever the
+population already concentrated, but doesn't reliably have enough time to escape a
+region the cheap model steered it into incorrectly. A flat larger model gets accurate
+signal from generation 1, so it doesn't have that failure mode — it's just slower.
+
+**Takeaway:** if you want better results, use a flat larger model size (`large` looks
+like the best time/quality trade found so far) rather than multi-fidelity scheduling.
+The feature stays available for anyone who wants to experiment with it further, but
+it isn't recommended based on what's actually been measured.
 
 ## How it works
 
