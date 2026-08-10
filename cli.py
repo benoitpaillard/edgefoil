@@ -111,13 +111,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--population", type=int, default=80)
     p.add_argument("--generations", type=int, default=120)
     p.add_argument(
-        "--model-size", choices=MODEL_SIZES, default="medium",
-        help="Flat NeuralFoil model size for every generation. Ignored if --early-model-size/--late-model-size are given.",
+        "--model-size", choices=MODEL_SIZES, default="large",
+        help="Flat NeuralFoil model size for every generation. Ignored if --early-model-size/--late-model-size are given. "
+        "'large' is the best time/quality trade found in testing -- see README.",
     )
     p.add_argument(
         "--early-model-size", choices=MODEL_SIZES, default=None,
         help="Enable multi-fidelity scheduling: fast/small model size for the early (exploration) generations. "
-        "Must be given together with --late-model-size.",
+        "Must be given together with --late-model-size. NOT recommended -- a rigorous study found this ties "
+        "flat 'medium' and loses to flat 'large'; see README. Left available for experimentation.",
     )
     p.add_argument(
         "--late-model-size", choices=MODEL_SIZES, default=None,

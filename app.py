@@ -135,12 +135,13 @@ with st.sidebar:
 
     model_size_options = ["xxsmall", "xsmall", "small", "medium", "large", "xlarge", "xxlarge", "xxxlarge"]
     use_multi_fidelity = st.checkbox(
-        "Multi-fidelity scheduling (recommended)", value=True,
+        "Multi-fidelity scheduling (available, not recommended)", value=False,
         help="Run most generations on a small, fast NeuralFoil model for broad exploration, then switch to "
         "a larger, more accurate model for the final generations to refine and rank the converging front. "
-        "Benchmarked against real XFoil on perturbed shapes: roughly break-even to ~5% faster overall than a "
-        "flat 'medium' run, with meaningfully better accuracy on the final result (~2% mean CD error at "
-        "'xlarge' vs ~5% at 'medium'). The speed gain is modest, not dramatic -- accuracy is the main benefit.",
+        "A rigorous multi-seed study (4 variants x 5 seeds, XFoil-verified results, see README) found this "
+        "is a statistical tie with a flat 'medium' run on every metric (all p>0.12) -- not the improvement "
+        "an isolated per-model-size benchmark suggested. Just using a flat larger model size (e.g. 'large') "
+        "significantly beat both. Left available for experimentation, off by default.",
     )
     if use_multi_fidelity:
         c1, c2 = st.columns(2)
@@ -154,8 +155,9 @@ with st.sidebar:
         model_size = late_model_size  # used for final display (polars, etc.) before a result exists
     else:
         model_size = st.selectbox(
-            "NeuralFoil model size", model_size_options, index=model_size_options.index("medium"),
-            help="Bigger = more accurate, slower. Applied flat across every generation.",
+            "NeuralFoil model size", model_size_options, index=model_size_options.index("large"),
+            help="Bigger = more accurate, slower. Applied flat across every generation. 'large' is the best "
+            "time/quality trade found in testing -- see README for the study.",
         )
 
 # ---------------------------------------------------------------------

@@ -133,10 +133,11 @@ implement: most generations run on a small/fast model for broad exploration, the
 last `late_phase_fraction` of generations switch to a large/accurate model (seeded
 from phase one's final population via `PopulationSeededSampling`) to refine and rank
 the converging front. It's implemented (`ModelSizeSchedule` in `core/moo.py`) and
-available — the "Multi-fidelity scheduling" checkbox in the web UI, or
-`--early-model-size`/`--late-model-size`/`--late-phase-fraction` on the CLI (both
-`--early-model-size` and `--late-model-size` must be given together; omitting both
-falls back to the flat `--model-size`).
+available, **off by default** — the "Multi-fidelity scheduling" checkbox in the web
+UI (unchecked by default), or `--early-model-size`/`--late-model-size`/
+`--late-phase-fraction` on the CLI (both `--early-model-size` and `--late-model-size`
+must be given together; omitting both uses the flat `--model-size`, which now
+defaults to `large`).
 
 **It didn't hold up under a rigorous test.** The per-model-size table above made it
 look promising, but that's an isolated, single-call benchmark, not a test of the
