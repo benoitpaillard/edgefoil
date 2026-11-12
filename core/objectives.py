@@ -28,6 +28,16 @@ from . import geometry as geo
 VALID_OBJECTIVE_KINDS = ("minimize_cd", "minimize_abs_cm", "maximize_cl")
 
 
+def validate_design_points(design_points: list["DesignPoint"]) -> None:
+    """Reject ambiguous design-point collections before evaluating them."""
+    labels = [dp.label.strip() for dp in design_points]
+    if any(not label for label in labels):
+        raise ValueError("Every design point must have a non-empty label.")
+    if len(labels) != len(set(labels)):
+        duplicates = sorted({label for label in labels if labels.count(label) > 1})
+        raise ValueError(f"Design-point labels must be unique; duplicate label(s): {duplicates}.")
+
+
 @dataclass(frozen=True)
 class DesignPoint:
     label: str
@@ -140,6 +150,7 @@ def evaluate_design_point(X: np.ndarray, dp: DesignPoint, model_size: str = "med
 def evaluate_all_design_points(
     X: np.ndarray, design_points: list[DesignPoint], model_size: str = "medium"
 ) -> dict[str, DesignPointResult]:
+    validate_design_points(design_points)
     return {dp.label: evaluate_design_point(X, dp, model_size=model_size) for dp in design_points}
 
 

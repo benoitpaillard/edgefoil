@@ -90,6 +90,7 @@ class OptimizationConfig:
     def __post_init__(self):
         if len(self.design_points) < 1:
             raise ValueError("At least one design point is required.")
+        obj.validate_design_points(self.design_points)
 
     @property
     def final_model_size(self) -> str:
@@ -207,16 +208,23 @@ class BaselineSeededSampling(Sampling):
     init in the ~18-dimensional CST space, especially at small population/
     generation budgets."""
 
-    def __init__(self, baseline_vec: np.ndarray, spread_fraction: float = 0.35, random_fraction: float = 0.15):
+    def __init__(
+        self,
+        baseline_vec: np.ndarray,
+        spread_fraction: float = 0.35,
+        random_fraction: float = 0.15,
+        seed: int | None = None,
+    ):
         super().__init__()
         self.baseline_vec = baseline_vec
         self.spread_fraction = spread_fraction
         self.random_fraction = random_fraction
+        self.seed = seed
 
     def _do(self, problem, n_samples, **kwargs):
         xl, xu = problem.xl, problem.xu
         half_range = (xu - xl) / 2.0
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(self.seed)
 
         n_random = max(1, int(round(n_samples * self.random_fraction)))
         n_perturbed = n_samples - n_random - 1  # -1 for the exact baseline row
@@ -244,15 +252,16 @@ class PopulationSeededSampling(Sampling):
     is smaller than the requested sample count, the shortfall is filled with small
     perturbations of randomly-chosen seed members rather than fresh random draws."""
 
-    def __init__(self, seed_population: np.ndarray, spread_fraction: float = 0.05):
+    def __init__(self, seed_population: np.ndarray, spread_fraction: float = 0.05, seed: int | None = None):
         super().__init__()
         self.seed_population = seed_population
         self.spread_fraction = spread_fraction
+        self.seed = seed
 
     def _do(self, problem, n_samples, **kwargs):
         xl, xu = problem.xl, problem.xu
         half_range = (xu - xl) / 2.0
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(self.seed)
 
         n_seed = self.seed_population.shape[0]
         if n_seed >= n_samples:
@@ -304,7 +313,7 @@ def run_optimization(config: OptimizationConfig, verbose: bool = False) -> Optim
     if config.model_size_schedule is None:
         result = _run_phase(
             config, config.model_size, config.n_generations,
-            sampling=BaselineSeededSampling(baseline_vec), verbose=verbose,
+            sampling=BaselineSeededSampling(baseline_vec, seed=config.seed), verbose=verbose,
         )
         n_evaluations = int(result.algorithm.evaluator.n_eval)
     else:
@@ -316,14 +325,17 @@ def run_optimization(config: OptimizationConfig, verbose: bool = False) -> Optim
             print(f"Multi-fidelity phase 1/2: {n_early} generations @ model_size={sched.early_model_size!r}")
         phase1 = _run_phase(
             config, sched.early_model_size, n_early,
-            sampling=BaselineSeededSampling(baseline_vec), verbose=verbose,
+            sampling=BaselineSeededSampling(baseline_vec, seed=config.seed), verbose=verbose,
         )
 
         if verbose:
             print(f"Multi-fidelity phase 2/2: {n_late} generations @ model_size={sched.late_model_size!r}")
         phase2 = _run_phase(
             config, sched.late_model_size, n_late,
-            sampling=PopulationSeededSampling(phase1.pop.get("X")), verbose=verbose,
+            sampling=PopulationSeededSampling(
+                phase1.pop.get("X"),
+                seed=None if config.seed is None else config.seed + 1,
+            ), verbose=verbose,
         )
 
         result = phase2
